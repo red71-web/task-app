@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>部門工作管考系統 V1-7.1 (Google Sheets 連線版)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 圖示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 pb-12">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-slate-800 text-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-list-check text-2xl text-amber-400"></i>
+                <h1 class="text-xl font-bold tracking-wide">部門工作管考系統 <span class="text-xs bg-amber-500 text-slate-900 px-2 py-0.5 rounded ml-2">V1-7.1 Sheets</span></h1>
+            </div>
+            <div class="flex items-center space-x-4 text-sm">
+                <span id="syncStatus" class="flex items-center text-slate-300">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-1"></i> 連線資料庫中...
+                </span>
+                <button onclick="fetchDataFromSheets()" class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded transition text-xs">
+                    <i class="fa-solid fa-rotate mr-1"></i> 手動同步
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <!-- 左側：快速新增與工作卡片控制面板 -->
+        <section class="md:col-span-1 space-y-6">
+            <!-- 新增工作卡片 -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 glass-panel">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                    <i class="fa-solid fa-plus-circle text-indigo-600 mr-2"></i> 新增工作項目
+                </h2>
+                <form id="taskForm" onsubmit="handleTaskSubmit(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">責任人</label>
+                        <input type="text" id="owner" required placeholder="例如：邱彥銘" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">工作標題</label>
+                        <input type="text" id="title" required placeholder="請輸入任務名稱..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">優先級</label>
+                            <select id="priority" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="P0">P0 - 緊急高優先</option>
+                                <option value="P1" selected>P1 - 標準</option>
+                                <option value="P2">P2 - 低優先</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">時段</label>
+                            <select id="slot" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="morning">上午時段</option>
+                                <option value="noon">中午/下午時段</option>
+                                <option value="evening">晚間/全日</option>
+                                <option value="future">未夾帶(未來預定)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">工程階段</label>
+                            <input type="text" id="engStatus" placeholder="例如：評估中/施工中" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">快記膠囊標記</label>
+                            <select id="isCapsule" class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="否">否</option>
+                                <option value="是">是 (膠囊)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" id="submitBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded text-sm transition shadow">
+                        <i class="fa-solid fa-paper-plane mr-1"></i> 新增並同步至 Google Sheets
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- 右側：任務清單與履歷呈現面板 -->
+        <section class="md:col-span-2 space-y-6">
+            <!-- 任務工作牆 -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 glass-panel">
+                <div class="flex justify-between items-center mb-4 border-b border-slate-200 pb-3">
+                    <h2 class="text-lg font-bold text-slate-800 flex items-center">
+                        <i class="fa-solid fa-tasks text-emerald-600 mr-2"></i> 部門工作看板
+                    </h2>
+                    <span id="taskCount" class="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">共 0 項工作</span>
+                </div>
+
+                <!-- 任務列表容器 -->
+                <div id="taskList" class="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+                    <p class="text-center text-slate-400 py-8 text-sm">正在載入 Google Sheets 資料...</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 處置履歷 Modal 對話框 -->
+    <div id="historyModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 class="font-bold text-slate-800 text-base" id="modalTitle">新增處置履歷</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="hidden" id="modalTaskId">
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">處置說明</label>
+                <textarea id="modalHistoryNote" rows="3" placeholder="請詳細說明今日處置狀況..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">照片連結 (選擇性)</label>
+                <input type="url" id="modalPhotoUrl" placeholder="https://..." class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded text-xs font-medium text-slate-600 hover:bg-slate-50">取消</button>
+                <button onclick="handleHistorySubmit()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-medium transition">儲存履歷</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 邏輯與 API 串接 -->
+    <script>
+        // 後端 Google Apps Script API 部署網址
+        const API_URL = "https://script.google.com/macros/s/AKfycbwejSSLN8mJV89Gt2kduk4Crdx26MVZeVE8BeVhlBvkzwbOUIB8rcTuK8BhwHM60ib8Mw/exec";
+
+        let localTasks = [];
+        let localHistories = [];
+
+        // 初始化載入
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchDataFromSheets();
+        });
+
+        // 1. 從 Google Sheets 抓取資料 (GET)
+        async function fetchDataFromSheets() {
+            updateSyncStatus(true, "連線資料庫中...");
+            try {
+                const response = await fetch(API_URL);
+                const result = await response.json();
+                
+                localTasks = result.工作項目 || [];
+                localHistories = result.處置履歷 || [];
+                
+                renderTasks();
+                updateSyncStatus(false, "資料同步完成");
+            } catch (error) {
+                console.error("讀取失敗:", error);
+                updateSyncStatus(false, "同步失敗，請重試", true);
+            }
+        }
+
+        // 2. 渲染 UI 看板
+        function renderTasks() {
+            const container = document.getElementById('taskList');
+            document.getElementById('taskCount').innerText = `共 ${localTasks.length} 項工作`;
+
+            if (localTasks.length === 0) {
+                container.innerHTML = `<p class="text-center text-slate-400 py-8 text-sm">目前試算表中尚無資料。</p>`;
+                return;
+            }
+
+            container.innerHTML = localTasks.map(task => {
+                const histories = localHistories.filter(h => h.任務編號 === task.任務編號);
+                const priorityColor = task.優先級 === 'P0' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-blue-100 text-blue-700 border-blue-200';
+                
+                return `
+                    <div class="border border-slate-200 rounded-lg p-4 hover:shadow-md transition bg-white space-y-3">
+                        <div class="flex justify-between items-start">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs px-2 py-0.5 rounded border font-semibold ${priorityColor}">${task.優先級}</span>
+                                <h3 class="font-bold text-slate-800 text-base">${escapeHtml(task.工作標題)}</h3>
+                                ${task.快記膠囊 === '是' ? '<span class="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">膠囊</span>' : ''}
+                            </div>
+                            <span class="text-xs font-semibold px-2 py-1 bg-slate-100 text-slate-600 rounded">${task.狀態}</span>
+                        </div>
+                        
+                        <div class="text-xs text-slate-500 grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded">
+                            <div><i class="fa-solid fa-user mr-1 text-slate-400"></i>責任人: <span class="font-medium text-slate-700">${escapeHtml(task.責任人)}</span></div>
+                            <div><i class="fa-solid fa-clock mr-1 text-slate-400"></i>時段: <span class="font-medium text-slate-700">${task.時段}</span></div>
+                            <div><i class="fa-solid fa-diagram-project mr-1 text-slate-400"></i>工程階段: <span class="font-medium text-slate-700">${escapeHtml(task.工程階段 || '無')}</span></div>
+                            <div><i class="fa-solid fa-calendar mr-1 text-slate-400"></i>建立日期: <span class="font-medium text-slate-700">${task.建立日期}</span></div>
+                        </div>
+
+                        <!-- 履歷記錄清單 -->
+                        ${histories.length > 0 ? `
+                            <div class="border-t border-slate-100 pt-2 space-y-1.5">
+                                <span class="text-xs font-semibold text-slate-500">最新處置履歷：</span>
+                                ${histories.map(h => `
+                                    <div class="text-xs bg-amber-50/60 border border-amber-100 rounded p-2 text-slate-700">
+                                        <div class="text-slate-400 text-[10px]">${h.記錄時間}</div>
+                                        <div>${escapeHtml(h.處置說明)}</div>
+                                        ${h.照片連結 ? `<a href="${h.照片連結}" target="_blank" class="text-indigo-600 underline text-[11px] block mt-1"><i class="fa-solid fa-image mr-1"></i>查看照片</a>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+
+                        <div class="flex justify-end pt-1">
+                            <button onclick="openHistoryModal('${task.任務編號}')" class="text-xs bg-slate-100 hover:bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded font-medium transition flex items-center">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i> 新增處置履歷
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 3. 處理表單提交 (新增工作)
+        async function handleTaskSubmit(event) {
+            event.preventDefault();
+            
+            const taskData = {
+                任務編號: "T_" + new Date().getTime(),
+                責任人: document.getElementById('owner').value,
+                工作標題: document.getElementById('title').value,
+                優先級: document.getElementById('priority').value,
+                工程階段: document.getElementById('engStatus').value,
+                時段: document.getElementById('slot').value,
+                快記膠囊: document.getElementById('isCapsule').value,
+                建立日期: new Date().toLocaleDateString('zh-TW'),
+                預計完成日: "",
+                預計時間: ""
+            };
+
+            updateSyncStatus(true, "正在新增工作至 Google Sheets...");
+            
+            try {
+                await fetch(API_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ 動作: "新增工作", 資料: taskData })
+                });
+
+                document.getElementById('taskForm').reset();
+                await fetchDataFromSheets();
+            } catch (error) {
+                console.error("新增失敗:", error);
+                updateSyncStatus(false, "新增失敗", true);
+            }
+        }
+
+        // 4. Modal 控制與處置履歷寫入
+        function openHistoryModal(taskId) {
+            document.getElementById('modalTaskId').value = taskId;
+            document.getElementById('modalHistoryNote').value = '';
+            document.getElementById('modalPhotoUrl').value = '';
+            document.getElementById('historyModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('historyModal').classList.add('hidden');
+        }
+
+        async function handleHistorySubmit() {
+            const taskId = document.getElementById('modalTaskId').value;
+            const note = document.getElementById('modalHistoryNote').value;
+            const photoUrl = document.getElementById('modalPhotoUrl').value;
+
+            if (!note.trim()) {
+                alert("請輸入處置說明");
+                return;
+            }
+
+            const historyData = {
+                任務編號: taskId,
+                記錄時間: new Date().toLocaleString('zh-TW'),
+                處置說明: note,
+                照片連結: photoUrl
+            };
+
+            closeModal();
+            updateSyncStatus(true, "正在儲存處置履歷...");
+
+            try {
+                await fetch(API_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ 動作: "新增處置履歷", 資料: historyData })
+                });
+
+                await fetchDataFromSheets();
+            } catch (error) {
+                console.error("儲存履歷失敗:", error);
+                updateSyncStatus(false, "儲存履歷失敗", true);
+            }
+        }
+
+        // 狀態更新輔助函式
+        function updateSyncStatus(isSyncing, text, isError = false) {
+            const statusEl = document.getElementById('syncStatus');
+            if (isSyncing) {
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1 text-amber-400"></i> ${text}`;
+            } else if (isError) {
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-exclamation mr-1 text-red-400"></i> ${text}`;
+            } else {
+                statusEl.innerHTML = `<i class="fa-solid fa-cloud-check mr-1 text-emerald-400"></i> ${text}`;
+            }
+        }
+
+        function escapeHtml(str) {
+            return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
